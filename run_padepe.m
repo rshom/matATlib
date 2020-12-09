@@ -1,4 +1,4 @@
-function TL = run_padepe(env,src,depths,ranges)
+function field = run_padepe(env,src)
 % RUN_PE returns a parabolic equation model of an AcousticEnvironment
 % 
 % Custom PE model written entirely in MATLAB.
@@ -11,59 +11,98 @@ function TL = run_padepe(env,src,depths,ranges)
 % TODO initialize parameters (using AcousticEnvironment)
 % TODO plotting functions for AcousticEnvironment and results
     
+    % Constant parameters TODO: set up to change
     np = 4;                  % ??? pade parameters use between 4 and 8
     ns = 0;                             % ??? stability factors
-    nu = 0;                             % ????
+    nu = 0;                             % ???
     
-    rangeStep = ranges(2)-ranges(1);
-    depthStep = depths(2)-depths(1);
-
+    % Build acoustic field
+    disp('generating field')
+    field = env.field;
+    % field.rho = field.rho./1000.0
+    field.p = zeros(size(field.cp));    % acoustic pressure
+    field.TL = zeros(size(field.cp));   % transmission loss
+    
+    % Frequency and wave number
     omega = 2*pi*src.freq;     % freq in radians
-    
-    env.layers(1).z;
-    env.layers(1).cp;
-
-    if length(env.layers(1))==1
-        cpRef = env.layers(1).cp;
-    else
-        cpRef = interp1(env.layers(1).z,env.layers(1).cp,env.source.z);
-        % TODO: interp1 does not work because it is an iso env which means
-        % there are duplicates    
-    end
-    
+    cpRef = interp1(field.z(:,1),field.cp(:,1),src.z);
     k0 = omega./cpRef;
-    
-    field = zeros( length(depths),length(ranges) );      % Allocate field
-    
-    % TODO: build field profiles for cp,cs,rho, alpha, and so on. This
-    % will replace the profile function or use it.
-    
-    [gamma, beta] = epade(np,nu,0,k0*rangeStep,2);% ???
-    [ksq, rho, alpha] = profl(env,src,depthStep);
-    
-    % Initialize pressure field    
-    pressureField = field;
-    pressure = sqrt(k0) * exp(-k0^2 / 2 * (depths' - src.z).^2);
 
-    for idx = 2:size(ranges,2)
+    eta = (40*pi*log10(exp(1)))^-1;
+    field.k = (1+1i*eta.*field.beta)*omega./field.cp; % ??? beta or alpha
+    field.ksq = field.k.^2 - k0^2;
+
+    % Generate Pade Coefficients
+    [gamma, beta] = epade(np,0,0,k0*env.dr,1);
+    
+    % Initialize pressure field  
+    u = sqrt(k0) * exp(-(k0^2/2) * (field.z(:,1) - src.z).^2); % ???
+    field.p(:,1) = u;
+
+    for ridx = 2:size(field.p,2)         % March forward
+        % disp(sprintf("Range: %f%",field.r(1,ridx)/field.r(1,end)))
+
+        alpha = sqrt(field.rho(:,ridx).*field.cp(:,ridx));
+
         for iPade = 1:np
-            R = matrc(rho, alpha, ksq, k0, beta(iPade));
-            S = matrc(rho, alpha, ksq, k0, gamma(iPade));
-            pressure = R\(S*pressure);  % eq. 10
+            
+            R = matrc(field.rho(:,ridx), alpha, ...
+                      field.ksq(:,ridx), k0, env.dz, beta(iPade));
+
+            S = matrc(field.rho(:,ridx), alpha, ...
+                      field.ksq(:,ridx), k0, env.dz, gamma(iPade));
+            u = R\(S*u);                % eq. 10
+            
         end
-        pressure = exp(i*k0*rangeStep) .* pressure;% eq. 8
-        pressureField(:,idx) = pressure.*alpha';% eq. 10
+        
+        u = exp(1i*k0*env.dr) .* u;     % eq. 8
+        field.p(:,ridx) = u.*alpha;     % eq. 10
+
     end
-    %TL = -20*log10(abs(pressureField*diag(sqrt(1./ranges))));% TODO
-    TL = -20*log10(abs(pressureField));
+    field.TL = -20*log10(abs(field.p./sqrt(field.r)));% TODO: check this
+    % field.TL = -20*log10(abs(field.p*diag(sqrt(1./field.r(1,:)))));
 end
 
-function X = galerkins_method()
-% ??? eq.14 build some kind of matrix at some point
 
+function XX = matrc(rho,alpha,ksq,k0,dz,coef)
+% matrc2 builds pade matrix 
+% 
+% TODO: document
+    
+    % alpha = sqrt(rho.*cp);
+    
+    dzsq = dz^2;
 
+    rhoP = circshift(rho,1);
+    rhoN = circshift(rho,-1);
+    alphaP = circshift(alpha,1);
+    alphaN = circshift(alpha,-1);
+    ksqP = circshift(ksq,1);
+    ksqN = circshift(ksq,-1);
+
+    rhoP(1) = rho(1);
+    alphaP(1) = alpha(1);
+    ksqP(1) = ksq(1);
+
+    rhoN(end) = rho(end);
+    alphaN(end) = alpha(end);
+    ksqN(end) = ksq(end);
+
+    % Define diagonals
+    a = +alphaP./(2*dzsq).*(rho./alpha).*(1./rhoP+1./rho)+(ksqP+ksq)./12;
+    
+    b = -alpha./(2*dzsq).*(rho./alpha).*(1./rhoP+2./rho+1./rhoN) ...
+        +(ksqP+6.*ksq+ksqN)./12;
+    
+    c = +alphaN./(2*dzsq).*(rho./alpha).*(1./rho+1./rhoN)+(ksq+ksqN)./12;
+    
+    % Build tri-diagonal matrix
+    XX = diag(2*k0^2/12 + coef.*c(1:end-1),  1)+ ...
+         diag(8*k0^2/12 + coef.*b,           0)+ ...
+         diag(2*k0^2/12 + coef.*a(2:end),   -1); % ??? use spdiags to create
 
 end
+
 
 function [gamma, beta] = epade(np,nu,alp,sig,ns)
 % function [gamma beta]=epade(np,nu,alp,sig,ns)
@@ -82,6 +121,8 @@ function [gamma, beta] = epade(np,nu,alp,sig,ns)
 %   
 % From Joe Lingevitch, Feb 2002
 % Email: jfl@aslan.nrl.navy.mil
+    
+% TODO rewrite to get rid of for loops
 
     n = 2*np;
 
@@ -92,16 +133,16 @@ function [gamma, beta] = epade(np,nu,alp,sig,ns)
         %	disp('ns = 2')
       otherwise
         %	disp('ns = 0')
-        ns = 0;
+        ns = 0;                         % weird way to handle this
     end
 
-    i = sqrt(-1);
-    fp = deriv(np,nu,alp,sig);
+    i = sqrt(-1);                       % unecessary
+    fp = deriv(np,nu,alp,sig);          % subfunction
 
-    a = zeros(n);
-    b = zeros(n,1);
+    a = zeros(n);                       % c = inv(a)*b;
+    b = zeros(n,1);                     % c = inv(a)*b;
 
-    for j = 1:np
+    for j = 1:n
         a(j,j) = -factorial(j);
     end;
 
@@ -144,7 +185,6 @@ function [gamma, beta] = epade(np,nu,alp,sig,ns)
         mu = 0.0;
         x0 = -1.5;
         j  = n-1;
-
         for k = 1:np
             a(j,k) = -x0^k;
         end;
@@ -152,7 +192,6 @@ function [gamma, beta] = epade(np,nu,alp,sig,ns)
         for k = 1:np
             a(j,k+np)=mu*x0^k;
         end;
-
         b(j) = 1-mu;
     end;
 
@@ -164,71 +203,96 @@ function [gamma, beta] = epade(np,nu,alp,sig,ns)
 
     gamma = -1./rootsnum;
     beta = -1./rootsden;
+end
 
-    %debugging code
+function [gamma, beta] = epade2(np,nu,alp,sig,ns)
+% Produce pade coefs
+% 
+% TODO rewrite to get rid of for loops and replace epade
 
-    debug = 0;
-    if debug == 1
-        x = -1:0.01:1;
+    % assert ns = 0,1,2
 
-        for j = 1:size(x,2)
-            num = 1.0;
-            den = 1.0;
-            for k = 1:np
-                num = num+c(k)*x(j)^k;
-                den = den+c(k+np)*x(j)^k;
-            end;
-            g(j) = num/den;
-        end
+    n = 2*np;
 
-        num = 1.0;
-        den = 1.0;
-        for k = 1:np
-            num = num+c(k)*x0^k;
-            den = den+c(k+np)*x0^k;
+    fp = deriv(np,nu,alp,sig);          % subfunction (rewrite)
+
+    b = zeros(n,1);                     % c = inv(a)*b;
+
+    a = diag(-factorial([1:n]));
+
+    
+    % TODO: define upper diag w/o loop
+    for j = 1:np
+        for k = 1:j-1
+            a(j,np+k) = nchoosek(j,k)*factorial(k)*fp(j-k);
         end;
-
-        constraint = num/den
-
-        f = (1-nu*x).^2.*(1+x).^alp.*exp(i*sig*(sqrt(1+x)-1));
-
-        figure
-        subplot(211)
-        plot(x,real(f),'k-','linewidth',1);hold on
-        set(gca,'linewidth',1.,'fontsize',11)
-        plot(x,real(g),'r--','linewidth',1)
-        title1 = ['f(x) = (1-\nu x)^2 (1+x)^{\alpha} exp({\it i} \sigma ((1+x)^{1/2}-1)) \approx g(x)'];
-        title2 = ['                             np = ',...
-                  int2str(np),', ns = ',int2str(ns),', \sigma: +',];
-        txt = char(title1,title2); 
-        title(txt,'fontsize',12)
-        ylabel('Real part','fontsize',11)
-
-        subplot(212)
-        plot(x,imag(f),'k-','linewidth',1);hold on
-        set(gca,'linewidth',1.,'fontsize',11)
-        plot(x,imag(g),'r--','linewidth',1)
-        xlabel('x','fontsize',11)
-        ylabel('Imaginary part','fontsize',11)
-        legend('f(x)','g(x)')
-
-        newpp = [0.25 2.5 8 6];
-        set(gcf,'Paperposition',newpp)              
-        filename = ['padec_np',num2str(np),'_ns_',num2str(ns),...
-                    '_sig',num2str(sign(sig)),'.eps']; 
-        print('-depsc', filename)
+        a(j,np+j) = factorial(j);
     end;
 
+    % TODO: define lower diag w/o loop
+    for j = np+1:n-ns
+        for k = 1:np
+            a(j,np+k) = nchoosek(j,k)*factorial(k)*fp(j-k);
+        end;
+    end;
+
+    for j = 1:n-ns
+        b(j) = -fp(j);
+    end;
+
+    b = -fp;                            % ??? check
+
+    % stability constraint
+    if ns == 1 | ns == 2 
+        %set g(-3)=0.0
+        mu = 0.0;
+        x0 = -3;
+        j = n;
+        for k = 1:np                    % TODO: no loop
+            a(j,k) = -x0^k;             % TODO: this gets over written
+        end;
+
+        for k = 1:np                    % TODO: no loop
+            a(j,k+np) = mu*x0^k;% TODO: mu is 0 so this is overwritten
+        end;
+
+        b(j) = 1-mu;                    % TODO: mu is 0 so this is 1
+    end;
+
+    if ns == 2 
+        %set g(-1.5)=0.0
+        mu = 0.0;
+        x0 = -1.5;
+        j  = n-1;
+        for k = 1:np
+            a(j,k) = -x0^k;             % TODO: this gets overwritten
+        end;
+
+        for k = 1:np
+            a(j,k+np)=mu*x0^k;          % TODO: mu is 0 so this is 0
+        end;
+        b(j) = 1-mu;                    % TODO: mu is 0 so this is 1
+    end;
+
+    % c = inv(a)*b;
+    c = a\b;
+
+    % roots
+    rootsnum = roots([transpose(c(np:-1:1)) 1]);
+    rootsden = roots([transpose(c(n:-1:np+1)) 1]);
+
+    gamma = -1./rootsnum;
+    beta = -1./rootsden;
 end
 
 function fp=deriv(np,nu,alp,sig)
 % deriv(np,nu,alp,sig)
 % deriv returns 2*np deriviative of f given nu, alp, sig
 % by Joe Lingevitch
+    
+% TODO rewrite
 
     n = 2*np;
-
-    i = sqrt(-1);
 
     f = 1;
     w = -2*nu+alp+i*sig/2;
@@ -238,7 +302,7 @@ function fp=deriv(np,nu,alp,sig)
 
     for j = 1:2*n
         wp(j) = -2*factorial(j)*nu^(j+1)+(-1)^j*alp*factorial(j)+ ... 
-                i*sig*(-1)^(j)*prod(1:2:2*j-1)/2^(j+1);
+                1i*sig*(-1)^(j)*prod(1:2:2*j-1)/2^(j+1);
     end
 
     for j = 2:n
@@ -248,70 +312,4 @@ function fp=deriv(np,nu,alp,sig)
         end
     end
 
-end
-
-function [ksq, rho, alpha] = profl(env,src,dz)
-   
-    z = 0:dz:env.maxDepth;
-    
-    waterCol = env.layers(1);
-    cp = waterCol.cp*ones(size(z));
-    rho = waterCol.rho*ones(size(z));
-    alpha = waterCol.alpha*ones(size(z));
-        
-    idx = z>=env.bottomBdry.depth;
-    cp(idx) = env.bottomBdry.cp;
-    alpha(idx) = env.bottomBdry.alpha;
-    beta(idx) = env.bottomBdry.beta;
-
-    % NOTE: stolen from orig
-    eta = 1/(40*pi*log10(exp(1)));      % ???
-    k_0 = 2*pi*src.freq / 1500;       % FIXME: depends on source depth
-    k = (1 + 1i*eta*beta)*(2*pi*src.freq)./cp;    
-
-    ksq = k.^2 - k_0^2;
-    rho(idx) = env.bottomBdry.rho;
-    alpha = sqrt(rho.*cp);          % ???: what is alpha here
-    
-end
-    
-
-function XX = matrc(rho, alpha, ksq, k_0, pade_coeff)
-% TODO write my version
-    XX = zeros(length(rho));
-    
-    a = zeros(length(rho), 1);
-    b = zeros(length(rho), 1);
-    c = zeros(length(rho), 1);
-    
-    a(1, :)= 2*k_0^2/12 + pade_coeff*(1/2 * (rho(1)/alpha(1)) + 1/12*(ksq(1)));
-    b(1, :)= 8*k_0^2/12 + pade_coeff*(-1/2 * (rho(1)/alpha(1)) * (2/(rho(1)) + 1/(rho(1+1)))*alpha(1) + 1/12*(6*ksq(1)+ ksq(1 + 1)));
-    c(1, :)= 2*k_0^2/12 + pade_coeff*(1/2 * (rho(1)/alpha(1)) * (1/(rho(1+1)) + 1/(rho(1)))*alpha(1+1) + 1/12*(ksq(1+1) + ksq(1)));
-    
-    for j = 2:length(rho) - 1
-        
-        a(j, :)= 2*k_0^2/12 + pade_coeff*(1/2 * (rho(j)/alpha(j)) * (1/(rho(j-1)) + 1/(rho(j)))*alpha(j-1) + 1/12*(ksq(j-1) + ksq(j)));
-        b(j, :)= 8*k_0^2/12 + pade_coeff*(-1/2 * (rho(j)/alpha(j)) * (1/(rho(j-1)) + 2/(rho(j)) + 1/(rho(j+1)))*alpha(j) + 1/12*(ksq(j-1) + 6*ksq(j)+ ksq(j + 1)));
-        c(j, :)= 2*k_0^2/12 + pade_coeff*(1/2 * (rho(j)/alpha(j)) * (1/(rho(j+1)) + 1/(rho(j)))*alpha(j+1) + 1/12*(ksq(j+1) + ksq(j)));
-        
-    end
-    
-    %a(length(rho), :) = a(length(rho) - 1, :);
-    b(length(rho), :) = b(length(rho) - 1, :);
-    %c(length(rho), :) = c(length(rho) - 1, :);
-    
-    main_diag = diag(b, 0);
-    upper_diag = diag(a(1:end-1));
-    lower_diag = diag(c(1:end-1));
-    
-    padding = zeros(1, length(b));
-    
-    upper_diag = [padding(1:end-1); upper_diag];
-    upper_diag = [upper_diag , padding(1:end)'];
-    
-    lower_diag = [lower_diag; padding(1:end-1)];
-    lower_diag = [padding(1:end)', lower_diag];
-    
-    XX = XX + main_diag + upper_diag + lower_diag;
-    
 end

@@ -5,15 +5,14 @@ function [env] = gen_iso_env(cp,depth,range)
     
     name = 'iso-env';
     maxRange = max(range);              % m
-    maxDepth = max(depth);              % m
+    maxDepth = max(depth)*1.1;          % m
 
-    surfaceBdry = gen_vacuum_bdry();
-    upperLimit = [0 0];
-    lowerLimit = [depth depth];
+    surfaceBdry = gen_vacuum_bdry(0);
+    upperLimit = 0;
+    lowerLimit = depth;
 
-    waterCol = gen_iso_layer(cp,upperLimit,lowerLimit);
-
-    bottomBdry = gen_vacuum_bdry();
+    waterCol = gen_iso_layer(cp,upperLimit,lowerLimit,maxRange);
+    bottomBdry = gen_vacuum_bdry(depth);
 
     env = AcousticEnvironment(name,maxDepth,maxRange, ...
                               surfaceBdry,waterCol,bottomBdry);

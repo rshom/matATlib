@@ -7,6 +7,7 @@ classdef AcousticLayer
     properties
         
         % Options
+        name(1,:) char = '';            % Layer name
         interpFunc (1,:) char = 'linear';
         Nmesh(1,1) double = 0.0;        % 0 to auto calculate
 
@@ -26,13 +27,16 @@ classdef AcousticLayer
     
     properties (Dependent)
         field double;                   % Acoustic field
+        envString char;                 % TODO:
     end        
 
     methods(Access=public)
-        function obj = AcousticLayer(depth,cp,cs,rho,alpha,beta,...
-                                     range,upperLimit,lowerLimit)
+        function obj = AcousticLayer(depth,range,cp,cs,rho,alpha,beta,...
+                                     upperLimit,lowerLimit)
         % AcousticLayer constructs a simple acoustic layer profile.
-            
+
+        % TODO: error check
+        
             obj.z = depth;
             obj.r = range;
             obj.cp = cp;
@@ -52,25 +56,51 @@ classdef AcousticLayer
     end
     
     methods                             % getter/setter
+
+        function val = get.envString(obj)
+        % envString 
+            
+            val = '';
+            val = [val sprintf('0\t0.0\t%0.6\t/\t \n',obj.z(end))];
+            if length(obj.cp)==1
+                val = [val sprintf('%0.6f\t%0.6f\t/\t\n', obj.z(1), obj.cp)];
+                val = [val sprintf('%0.6f\t%0.6f\t/\t\n', obj.z(end), obj.cp)];
+            else
+                for idx=1:length(obj.z)
+                    val = [val sprintf('%0.6f\t%0.6f\t/\t\n', obj.z(idx), obj.cp(idx))];
+                end
+            end
+            
+
+        end
+
+
         function field = get.field(obj)
         % Return acoustic field of profiles
             
             [field.r,field.z] = meshgrid(obj.r,obj.z);
-            field.r = field.r';
+            
             idx = and(field.z<=obj.lowerLimit,field.z>=obj.upperLimit);
             
             function x = build_field(x,idx)
             % Convert parameter to full field
-                if size(x)==size(idx)
-                    x(~idx) = NaN;
-                elseif size(x)==[size(idx,1) 1]
-                    x = repmat(x,1,size(idx,2))
-                elseif size(x)==[1 1];
-                    x = ones(size(idx)).*x.*idx;
+                
+                [m,n]=size(idx);
+                
+                if size(x)==[1 1];      % constant
+                    x = ones(size(idx)).*x;
+                elseif size(x)==[1 n]   % range dependent
+                    x = repmat(x,m,n);
+                elseif size(x)==[m 1]   % depth dependent
+                    x = repmat(x,1,n);
+                elseif size(x)==[m,n]   % full field
+                    x = x;
                 else
                     error('Profile incorrect size')
                 end
+                
                 x(~idx) = NaN;
+                
             end
 
             field.cp = build_field(obj.cp,idx);

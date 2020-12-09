@@ -4,7 +4,7 @@ classdef AcousticSource
     properties
         freq(1,1) double;               % Output frequencies
         z(:,1) double;                  % Depth array in meters
-        beams(:,1) double;              % Beam angles (deg
+        alpha(1,:) double = [-20:1:20]; % Beam angles (deg
     end
     
     properties(Dependent)

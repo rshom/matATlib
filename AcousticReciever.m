@@ -6,8 +6,8 @@ classdef AcousticReciever
     
     properties
         % TODO: add propery descriptions somehow
-        r(1,:) double {mustBePositive};
-        z(:,1) double {mustBePositive};
+        r(1,:) double
+        z(:,1) double
     end
     
     properties(Dependent)
@@ -25,26 +25,26 @@ classdef AcousticReciever
     end
     
     methods
-        function value = get.N(obj)
-        % N number of recievers
-            value = length(obj.r)*length(obj.z);
-        end
+        % function value = get.N(obj)
+        % % N number of recievers
+        %     value = length(obj.r)*length(obj.z);
+        % end
         
-        function value = get.depthString(obj)
-        % Getter for depth string for env file
+        % function value = get.depthString(obj)
+        % % Getter for depth string for env file
             
-            value = sprintf('%d \t %0.6f \ \t ! NSD SD(1:NSD) (m) \n', ...
-                            length(obj.z), obj.z);            
+        %     value = sprintf('%d \t %0.6f \ \t ! NSD SD(1:NSD) (m) \n', ...
+        %                     length(obj.z), obj.z);            
 
-        end
+        % end
 
-        function value = get.rangeString(obj)
-        % Getter for range string for env file
+        % function value = get.rangeString(obj)
+        % % Getter for range string for env file
             
-            value = sprintf('%d \t %0.6f \ \t ! NRD RD(1:NRD) (m) \n', ...
-                            length(obj.r), obj.r);
+        %     value = sprintf('%d \t %0.6f \ \t ! NRD RD(1:NRD) (m) \n', ...
+        %                     length(obj.r), obj.r);
 
-        end
+        % end
 
     end
 
