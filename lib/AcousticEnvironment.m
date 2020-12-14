@@ -3,9 +3,6 @@ classdef AcousticEnvironment
 % 
 % Environments consist of basic options, a surface layer, profiles for
 % each media, a bottom layer, sources, and recievers. 
-% 
-% author: [Russell Shomberg](rshomberg@uri.edu)
-% date: Dec 2020 
 
 % TODO document all properties and options in detail
     
@@ -20,8 +17,8 @@ classdef AcousticEnvironment
         maxDepth(1,1) double;          % Depth of simulation field (m)
         cHigh(1,1) double = 1800;       % Max soundspeed (m/s)
         cLow(1,1) double = 1400;        % Min soundspeed (m/s)
-        dr(1,1) double;
-        dz(1,1) double;
+        dr(1,1) double;                 % Range step (m)
+        dz(1,1) double;                 % Depth setp (m)
         
         % Layers
         srf AcousticBoundary;           % Acoustic surface object

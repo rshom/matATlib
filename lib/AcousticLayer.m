@@ -36,7 +36,6 @@ classdef AcousticLayer
         % profile struct.
             
         % TODO: error check
-        % TODO: assert height of inputs must be at least 2
             
             lyr.z = ssp.z;              % depths
             

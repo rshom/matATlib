@@ -1,9 +1,4 @@
 % KRAKENDEMO runs KRAKEN on a simple pekeris wave guide.
-% 
-% The environment is a shallow water waveguide with a sediment layer
-% and an acoustic halfspace ocean floor. 
-% 
-% TODO: document
 
 % Build Acoustic Environment
 ssp.r = 0;
@@ -15,13 +10,13 @@ ssp.alpha = 0;                          % db/wavelength
 ssp.beta = 0;                           % db/wavelength
 lyr1 = AcousticLayer(ssp);
 
-btm.z = [101; 200];                     % m
-btm.cp = 1700;                          % m/s
-btm.cs = 0;                             % m/s
-btm.rho = 1500;                         % kg/m3
-btm.alpha = 0.5;                        % db/wavelength
-btm.beta = 0.5;                         % db/wavelength
-lyr2 = AcousticLayer(btm);
+sed.z = [101; 200];                     % m
+sed.cp = 1700;                          % m/s
+sed.cs = 0;                             % m/s
+sed.rho = 1500;                         % kg/m3
+sed.alpha = 0.5;                        % db/wavelength
+sed.beta = 0.5;                         % db/wavelength
+lyr2 = AcousticLayer(sed);
 
 srf = AcousticBoundary('vacuum',0,0);
 
@@ -36,7 +31,8 @@ env = AcousticEnvironment('shallow',srf,[lyr1 lyr2],flr);
 env.maxRange = 10e3;                    % m
 
 src = AcousticSource(150,50);            % freq,depth
-rcv = AcousticReciever([0:env.maxRange],[0:env.maxDepth]); % ranges,depths
+rcv = AcousticReciever([0:env.maxRange], ...
+                       [0:env.maxDepth]); % ranges,depths
 
 % Run model
 [shade,modes] = run_kraken(env,src,rcv,[1:7]);  % TODO: modes are not right
