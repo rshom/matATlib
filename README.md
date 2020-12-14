@@ -9,35 +9,27 @@
 
   * [ ] run_at functions
 	* [x] run_padepe.m
-	* [ ] run_kraken.m
-	* [ ] run_bellhop.m
+	* [x] run_kraken.m
+	* [x] run_bellhop.m
 	* [ ] run_bounce.m
 
-  * [ ] plot functions
-	* [ ] plot env
-	* [ ] plot field
-	* [ ] plot rays
-	* [ ] plot modes
-	* [ ] plot reflection coefs
-	
   * [ ] write functions
-	* [ ] env (kraken/bellhop)
+	* [x] env (kraken/bellhop)
 	* [ ] bty
 	* [ ] ssp
-	* [ ] flp
-	* [ ] brc?
-	* [ ] trc?
-	* [ ] irc?
+	* [x] flp
+	* [ ] brc
+	* [ ] trc
+	* [ ] irc
 	
-  * [ ] read functions
-	* [ ] shd
-	* [ ] ray
-	* [ ] mod
-	* [ ] prt?
+  * [x] read functions
+	* [x] shd
+	* [x] ray
+	* [x] mod
 	
   * [ ] Error checks and warnings
 	
-  * [ ] Demos
+  * [x] Demos
 	
   * [ ] Clean up
 	* [ ] better name
