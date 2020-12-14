@@ -24,13 +24,9 @@ classdef AcousticEnvironment
         dz(1,1) double;
         
         % Layers
-        surfaceBdry AcousticBoundary;   % Acoustic surface object
-        layers(:,1) AcousticLayer;       % Acoustic layer object array
-        bottomBdry AcousticBoundary;% Acoustic bottom object
-
-        % Sources and recievers
-        source AcousticSource;    % Acoustic source object
-        reciever AcousticReciever;% Acoustic reciever object
+        srf AcousticBoundary;           % Acoustic surface object
+        lyrs(:,1) AcousticLayer;        % Acoustic layer object array
+        flr AcousticBoundary;           % Acoustic bottom object
 
         % Options
         attenuationUnits (1,:) char = 'dB/wavelength'; % Attenuation units
@@ -39,35 +35,30 @@ classdef AcousticEnvironment
 
     properties (Dependent)
         
-        fileBase(1,:) char;
-        Nmedia(1,1) int;                % TODO: write getter
-        topOpts(1,6) char = '    '; % TODO: write getter/setter
-        botOpts(1,4) char = '  ';   % TODO: write getter/setter
-        runTypeCode(1,3) char = ' ';% TODO: write getter/setter
+        fileBase(1,:) char;             % base for AT file names
+        topOpts(1,6) char = '    ';     % TODO: write getter/setter
+        botOpts(1,4) char = '  ';       % TODO: write getter/setter
         
-        field double;
+        field double;                   % Struct of values in meshgrid
     end
 
     methods(Access=public)
 
-        function obj = AcousticEnvironment(name,maxDepth,maxRange, ...
-                                           surfaceBdry,layers,bottomBdry)
+        function obj = AcousticEnvironment(name,srf,lyrs,flr)
             % AcousticEnvironment builds the acoustic environment.
 
             obj.name = name;
-            obj.maxDepth = maxDepth;
-            obj.maxRange = maxRange;
-            obj.surfaceBdry = surfaceBdry;
-            obj.layers = layers;
-            obj.bottomBdry = bottomBdry;
+
+            obj.srf = srf;
+            obj.lyrs = lyrs;
+            obj.flr = flr;
             
+            obj.maxDepth = max(flr.z);
+            obj.maxRange = max(flr.r); % TODO: check furthet out layer
+
             obj.dz = obj.maxDepth./500;
             obj.dr = obj.maxRange./500;
-
-            % TODO: define source and reviever later
-            %obj.source = source;
-            %obj.reciever = reciever;
-
+            
         end
         
     end
@@ -96,7 +87,7 @@ classdef AcousticEnvironment
         
         function opts = get.topOpts(env)
         % Top options for env file
-            switch env.layers(1).interpFunc
+            switch env.lyrs(1).interpFunc
                 % SSP approximation options
                 % 'N' N2-Linear approximation to SSP
                 % 'C' C-Linear approximation to SSP
@@ -121,7 +112,7 @@ classdef AcousticEnvironment
                 error('Sound speed interp not implimented');
             end
             
-            switch env.surfaceBdry.type
+            switch env.srf.type
                 % Boundary conditions
               case 'vacuum'
                 opts(2) = 'V';
@@ -158,15 +149,14 @@ classdef AcousticEnvironment
             
         end
 
-        function field = get.field(env)
+        function field = get.field(env) % TODO: replace with a function
         % Generate a field
 
             r = [0:env.dr:env.maxRange];
             z = [0:env.dz:env.maxDepth];
 
             [field.r,field.z] = meshgrid(r,z);
-            size(field.z)
-            size(field.r)
+            
 
             % allocate fields
             field.cp = zeros(size(field.r));
@@ -176,20 +166,17 @@ classdef AcousticEnvironment
             field.beta = zeros(size(field.r));
             
             % Set basement as standard
-            % field.cp(:) = env.bottomBdry.cp;
-            % field.cs(:) = env.bottomBdry.cs;
-            % field.rho(:) = env.bottomBdry.rho;
-            % field.alpha(:) = env.bottomBdry.alpha;
-            % field.beta(:) = env.bottomBdry.beta;
+            % field.cp(:) = env.flr.cp;
+            % field.cs(:) = env.flr.cs;
+            % field.rho(:) = env.flr.rho;
+            % field.alpha(:) = env.flr.alpha;
+            % field.beta(:) = env.flr.beta;
             
-            for idx = 1:length(env.layers)
+            for idx = 1:length(env.lyrs)
 
-                disp(sprintf("Starting layer %d",idx))
-                
-                lyr = env.layers(idx).field;
+                lyr = env.lyrs(idx).field;
                 
                 if size(lyr.r,2)==1 % range independent
-                    disp("Generating range profiles")
                     lyr.r = [lyr.r env.maxRange*ones(size(lyr.r))];
                     lyr.z = repmat(lyr.z,1,2);
                     lyr.cp = repmat(lyr.cp,1,2);
@@ -227,31 +214,30 @@ classdef AcousticEnvironment
 
             end
 
-            disp('Setting basement')
             % Override below basement
-            bot = env.bottomBdry.field;
+            flr = env.flr.field;
             
-            if size(bot.r)==[1 1]       % Flat basement
-                bot.r = [0 env.maxRange];
-                bot.z = [bot.z bot.z];
-                bot.cp = [bot.cp bot.cp];
-                bot.cs = [bot.cs bot.cs];
-                bot.rho = [bot.rho bot.rho];
-                bot.alpha = [bot.alpha bot.alpha];
-                bot.beta = [bot.beta bot.beta];
+            if size(flr.r)==[1 1]       % Flat basement
+                flr.r = [0 env.maxRange];
+                flr.z = [flr.z flr.z];
+                flr.cp = [flr.cp flr.cp];
+                flr.cs = [flr.cs flr.cs];
+                flr.rho = [flr.rho flr.rho];
+                flr.alpha = [flr.alpha flr.alpha];
+                flr.beta = [flr.beta flr.beta];
             end
 
-            depth = interpn(bot.r,bot.z,field.r(1,:),...
-                            env.bottomBdry.interpFunc,NaN); % modify interp
+            depth = interpn(flr.r,flr.z,field.r(1,:),...
+                            env.flr.interpFunc,NaN); % modify interp
             
             idx = field.z>depth;
             
             
-            field.cp(idx) = env.bottomBdry.cp;
-            field.cs(idx) = env.bottomBdry.cs;
-            field.rho(idx) = env.bottomBdry.rho;
-            field.alpha(idx) = env.bottomBdry.alpha;
-            field.beta(idx) = env.bottomBdry.beta;
+            field.cp(idx) = env.flr.cp;
+            field.cs(idx) = env.flr.cs;
+            field.rho(idx) = env.flr.rho;
+            field.alpha(idx) = env.flr.alpha;
+            field.beta(idx) = env.flr.beta;
             
         end
     end

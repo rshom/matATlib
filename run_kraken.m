@@ -1,16 +1,27 @@
-function res = run_kraken(env,src,rcv)
+function [shade,modes] = run_kraken(env,src,rcv,modes)
 % run_kraken returns results from running the KRAKEN model.
 % 
-% run_kraken writes the KRAKEN input files, rusn the FORTRAN binary,
-% and reads the output files into a useable result.
-% 
-% See https://oalib-acoustics.org/AcousticsToolbox/manual/node47.html
-% for more information.
+% run_kraken writes the KRAKEN input files, runs the FORTRAN binary,
+% and reads the output files into a useable result. See
+% https://oalib-acoustics.org/AcousticsToolbox/manual/node47.html for
+% more information.
 
-    % Prepare files
+% Prepare files
     write_envfil(env,src,rcv);
+
+    write_flpfil(env,src,rcv);          
     % TODO: write other files if needed
-    write_flpfil(env,src,rcv);
+    % brcfil = fopen([fileBase+'.brc'], 'w');
+    % trcfil = fopen([fileBase+'.trc'], 'w');
+    % ircfil = fopen([fileBase+'.irc'], 'w');    
+    
+    if length(env.lyrs(1).r)>1          % Range dependent SSP
+        error('Range dependent SSP not yet supported');
+    end
+    
+    if length(env.flr.r)>1              % Range dependent depth
+        error('Range dependent depth not yet supported');
+    end
     
     % Run acoustic toolbox
     model = 'kraken.exe';
@@ -22,13 +33,14 @@ function res = run_kraken(env,src,rcv)
         eval( [ '! "' runmodel '" ' env.fileBase ] );
     end
     
-    field(env.fileBase);                % from AT may need to rewrite
+    field(env.fileBase, modes);                % from AT may need to rewrite
     
-    plotshd([env.fileBase '.shd.mat']);
-    
-    % Read results
-    % modes = read_modefile([env.fileBase '.mod']);
-    [ PlotTitle, PlotType, freqVec, freq0, atten, Pos, pressure ] = read_shd([env.fileBase '.shd.mat']);
+    % read results
+    % TODO: rewrite read files
+
+    modes = read_modes([env.fileBase '.mod'], src.freq, modes);
+    [ ~, ~, shade.freqVec,~,~, shade.pos, shade.p ] = read_shd([env.fileBase '.shd.mat']);
+    shade.TL = -20*log10(abs(shade.p));
 
     % Clean up files
 
@@ -41,11 +53,11 @@ function write_envfil(env,src,rcv)
     
     fprintf(envfil,'%s \t ! TITLE \n',env.name);
     fprintf(envfil,'%0.6f \t ! FREQ (Hz) \n',src.freq); 
-    fprintf(envfil,'%d \t ! NMEDIA \n',length(env.layers));
+    fprintf(envfil,'%d \t ! NMEDIA \n',length(env.lyrs));
 
     fprintf(envfil,'''%s'' \t ! SSP Options \n', env.topOpts);
     
-    for lyr=env.layers
+    for lyr=env.lyrs'
         fprintf(envfil, ...
                 '%d %0.6f %0.6f \t ! NMESH SIGMA ZMAX \n',...
                 0, lyr.sigma, lyr.z(end));
@@ -60,21 +72,20 @@ function write_envfil(env,src,rcv)
     botOpts = '  ';                    % Placeholder
     botOpts(2) = ' ';                  % Kraken cannot be range dependent
 
-    bdry = env.bottomBdry;
-    switch bdry.type
+    switch env.flr.type
       case 'vacuum'
         botOpts(1) = 'V';
         fprintf(envfil,'''%s''\t%0.6f\t ! BOTOPTS BOTROUGHNESS \n', ...
-                botOpts,bdry.sigma);
+                botOpts,env.flr.sigma);
         % Vacuum only has one lines
       case 'halfspace'
         botOpts(1) = 'A';
         fprintf(envfil, ...
                 '''%s''\t%0.6f\t ! BOTOPTS BOTROUGHNESS \n', ...
-                botOpts,bdry.sigma);
+                botOpts,env.flr.sigma);
         fprintf(envfil, ...
                 '\t %0.6f %0.6f %0.6f %0.6f / \t ! Z CP CS RHO \n', ...
-                bdry.z(1), bdry.cp(1), bdry.cs(1), bdry.rho(1)/1000);
+                env.flr.z(1), env.flr.cp(1), env.flr.cs(1), env.flr.rho(1)/1000);
       otherwise
         error('Bottom boundary type not implemented');
     end
@@ -90,9 +101,10 @@ function write_envfil(env,src,rcv)
     
     % Reciever information
     % fprintf(envfil,'%d \n \t ',length(rcv.z));
-    fprintf(envfil,'%d \n \t ',1001);
-    fprintf(envfil,'0 %0.6f',max(rcv.z));
-    fprintf(envfil, '/ \t ! NSD RD(1:NRD) \n');
+    fprintf(envfil,'%d \n \t ',length(rcv.z));
+    fprintf(envfil,'%0.6f ',rcv.z);
+    % fprintf(envfil,'0 %0.6f',max(rcv.z));
+    fprintf(envfil, '/ \t ! NRD RD(1:NRD) \n');
     fprintf(envfil,'\n');
 
     fclose(envfil);
@@ -106,9 +118,9 @@ function write_flpfil(env,src,rcv)
 % TODO: document
 % TODO: add options
 
-flpfil = fopen([env.fileBase '.flp'],'w');
+    flpfil = fopen([env.fileBase '.flp'],'w');
 
-    fprintf(flpfil,'''%s'' \t ! TITLE \n',env.name);
+    fprintf(flpfil,'/ \t ! TITLE \n',env.name);
 
     fprintf(flpfil,'''RA'' \t ! R/X (coord), Pos/Neg/Both \n' ); % TODO: add options
     fprintf(flpfil,'%d \t ! NModes \n', 9999);% TODO: add options
@@ -116,26 +128,24 @@ flpfil = fopen([env.fileBase '.flp'],'w');
     fprintf(flpfil,'%d \t ! RProfile (km) \n', 0);% TODO: add options    
 
     % Reciever range information
-    % fprintf(flpfil,'%d \n \t ',max(length(rcv.z),length(rcv.r)));
-    fprintf(flpfil,'%d \t ! NRR \n',1000);
-    fprintf(flpfil,'%0.6f %0.6f',0,env.maxRange/1000);
-    fprintf(flpfil, '/ ! RR(1:NRR) (km)  \n');
+    fprintf(flpfil,'%d \n',length(rcv.r));
+    fprintf(flpfil,'%0.6f ',rcv.r);
+    fprintf(flpfil, '! RR(1:NRR) (km)  \n');
 
     % Source information
-    fprintf(flpfil,'%d \t ! NSD \n',length(src.z));
+    fprintf(flpfil,'%d \n',length(src.z));
     fprintf(flpfil,'%0.6f ',src.z);
-    fprintf(flpfil, '\t /! SD(1:NSD) \n');
+    fprintf(flpfil, '\t ! SD(1:NSD) \n');
     
     % Reciever depth information
-    % fprintf(flpfil,'%d \n \t ',max(length(rcv.z),length(rcv.r)));
-    fprintf(flpfil,'%d \t ! NSD \n',501);
-    % fprintf(flpfil,'%0.6f %0.6f',min(rcv.z),max(rcv.z));
-    fprintf(flpfil,'%0.6f %0.6f',0,env.layers(1).z(end));
-    fprintf(flpfil, '\t /! SD(1:NSD) \n');
+    fprintf(flpfil,'%d \n',length(rcv.z));
+    fprintf(flpfil,'%0.6f ',rcv.z);
+    fprintf(flpfil, '\t ! RD(1:NRD) \n');
+    % fprintf(flpfil,'%0.6f %0.6f',0,env.lyrs(1).z(end));
 
     % ???: reciever range displacement
-    fprintf(flpfil,'%d \t ! NRRD \n', 501); 
-    fprintf(flpfil,'0 0 \t ! RRD(1:NRRD) \n');
+    fprintf(flpfil,'%d \n', 501); 
+    fprintf(flpfil,'1 0 / \t ! RRD(1:NRRD) \n');
 
     fprintf(flpfil,'\n');
     

@@ -3,6 +3,6 @@ function bdry = gen_halfspace_bdry(cp,cs,rho,alpha,beta,depths)
 % 
 % TODO: document
 
-    bdry = AcousticBoundary('halfspace',cp,cs,rho,alpha,beta,depths);
+    bdry = AcousticBoundary('halfspace',depth,cp,cs,rho,alpha,beta);
     
 end

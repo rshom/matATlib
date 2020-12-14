@@ -1,36 +1,24 @@
 function field = run_padepe(env,src)
 % RUN_PE returns a parabolic equation model of an AcousticEnvironment
 % 
-% Custom PE model written entirely in MATLAB.
-% 
-% author: [Russell Shomberg](rshomberg@gmail.com)
-% date:   2020
-    
-% TODO clean up naming conventions (repeat names)
-% TODO error handling
-% TODO initialize parameters (using AcousticEnvironment)
-% TODO plotting functions for AcousticEnvironment and results
-    
-    % Constant parameters TODO: set up to change
-    np = 4;                  % ??? pade parameters use between 4 and 8
-    ns = 0;                             % ??? stability factors
-    nu = 0;                             % ???
+% rshomberg@uri.edu 2020 
+        
+    np = 4; ns = 0; nu = 0;             % PADE parameters
     
     % Build acoustic field
     disp('generating field')
     field = env.field;
-    % field.rho = field.rho./1000.0
     field.p = zeros(size(field.cp));    % acoustic pressure
     field.TL = zeros(size(field.cp));   % transmission loss
     
     % Frequency and wave number
-    omega = 2*pi*src.freq;     % freq in radians
+    omega = 2*pi*src.freq;              % freq in radians
     cpRef = interp1(field.z(:,1),field.cp(:,1),src.z);
-    k0 = omega./cpRef;
+    k0 = omega./cpRef;                  % ref wave number
 
+    % Wavenumber
     eta = (40*pi*log10(exp(1)))^-1;
-    field.k = (1+1i*eta.*field.beta)*omega./field.cp; % ??? beta or alpha
-    field.ksq = field.k.^2 - k0^2;
+    field.k = (1+1i*eta.*field.alpha)*omega./field.cp;
 
     % Generate Pade Coefficients
     [gamma, beta] = epade(np,0,0,k0*env.dr,1);
@@ -40,66 +28,45 @@ function field = run_padepe(env,src)
     field.p(:,1) = u;
 
     for ridx = 2:size(field.p,2)         % March forward
-        % disp(sprintf("Range: %f%",field.r(1,ridx)/field.r(1,end)))
-
         alpha = sqrt(field.rho(:,ridx).*field.cp(:,ridx));
-
         for iPade = 1:np
-            
             R = matrc(field.rho(:,ridx), alpha, ...
-                      field.ksq(:,ridx), k0, env.dz, beta(iPade));
-
+                      field.k(:,ridx), k0, env.dz, beta(iPade));
             S = matrc(field.rho(:,ridx), alpha, ...
-                      field.ksq(:,ridx), k0, env.dz, gamma(iPade));
+                      field.k(:,ridx), k0, env.dz, gamma(iPade));
             u = R\(S*u);                % eq. 10
-            
         end
-        
         u = exp(1i*k0*env.dr) .* u;     % eq. 8
         field.p(:,ridx) = u.*alpha;     % eq. 10
-
     end
-    field.TL = -20*log10(abs(field.p./sqrt(field.r)));% TODO: check this
-    % field.TL = -20*log10(abs(field.p*diag(sqrt(1./field.r(1,:)))));
+    field.TL = -20*log10(abs(field.p./sqrt(field.r)));
 end
 
 
-function XX = matrc(rho,alpha,ksq,k0,dz,coef)
+function XX = matrc(rho,alpha,k,k0,dz,coef)
 % matrc2 builds pade matrix 
-% 
-% TODO: document
-    
-    % alpha = sqrt(rho.*cp);
     
     dzsq = dz^2;
+    ksq = k.^2 - k0^2;
 
-    rhoP = circshift(rho,1);
-    rhoN = circshift(rho,-1);
-    alphaP = circshift(alpha,1);
-    alphaN = circshift(alpha,-1);
-    ksqP = circshift(ksq,1);
-    ksqN = circshift(ksq,-1);
-
-    rhoP(1) = rho(1);
-    alphaP(1) = alpha(1);
-    ksqP(1) = ksq(1);
-
-    rhoN(end) = rho(end);
-    alphaN(end) = alpha(end);
-    ksqN(end) = ksq(end);
+    % Set up for simplier math
+    rhoP = circshift(rho,1);     rhoN = circshift(rho,-1);
+    rhoP(1) = rho(1);            rhoN(end) = rho(end);
+    alphaP = circshift(alpha,1); alphaN = circshift(alpha,-1);
+    alphaP(1) = alpha(1);        alphaN(end) = alpha(end);
+    ksqP = circshift(ksq,1);     ksqN = circshift(ksq,-1);
+    ksqP(1) = ksq(1);            ksqN(end) = ksq(end);
 
     % Define diagonals
     a = +alphaP./(2*dzsq).*(rho./alpha).*(1./rhoP+1./rho)+(ksqP+ksq)./12;
-    
     b = -alpha./(2*dzsq).*(rho./alpha).*(1./rhoP+2./rho+1./rhoN) ...
         +(ksqP+6.*ksq+ksqN)./12;
-    
     c = +alphaN./(2*dzsq).*(rho./alpha).*(1./rho+1./rhoN)+(ksq+ksqN)./12;
     
     % Build tri-diagonal matrix
     XX = diag(2*k0^2/12 + coef.*c(1:end-1),  1)+ ...
          diag(8*k0^2/12 + coef.*b,           0)+ ...
-         diag(2*k0^2/12 + coef.*a(2:end),   -1); % ??? use spdiags to create
+         diag(2*k0^2/12 + coef.*a(2:end),   -1);
 
 end
 
@@ -212,13 +179,12 @@ function [gamma, beta] = epade2(np,nu,alp,sig,ns)
 
     % assert ns = 0,1,2
 
-    n = 2*np;
+    % n = 2*np;
 
-    fp = deriv(np,nu,alp,sig);          % subfunction (rewrite)
+    fp = deriv(np,nu,alp,sig);          % TODO: rewrite
 
-    b = zeros(n,1);                     % c = inv(a)*b;
-
-    a = diag(-factorial([1:n]));
+    b = zeros(2*np,1);                     % c = inv(a)*b;
+    a = diag(-factorial([1:2*np]));
 
     
     % TODO: define upper diag w/o loop
@@ -230,13 +196,13 @@ function [gamma, beta] = epade2(np,nu,alp,sig,ns)
     end;
 
     % TODO: define lower diag w/o loop
-    for j = np+1:n-ns
+    for j = np+1:2*np-ns
         for k = 1:np
             a(j,np+k) = nchoosek(j,k)*factorial(k)*fp(j-k);
         end;
     end;
 
-    for j = 1:n-ns
+    for j = 1:2*np-ns
         b(j) = -fp(j);
     end;
 
@@ -247,7 +213,7 @@ function [gamma, beta] = epade2(np,nu,alp,sig,ns)
         %set g(-3)=0.0
         mu = 0.0;
         x0 = -3;
-        j = n;
+        j = 2*np;
         for k = 1:np                    % TODO: no loop
             a(j,k) = -x0^k;             % TODO: this gets over written
         end;
@@ -263,7 +229,7 @@ function [gamma, beta] = epade2(np,nu,alp,sig,ns)
         %set g(-1.5)=0.0
         mu = 0.0;
         x0 = -1.5;
-        j  = n-1;
+        j  = 2*np-1;
         for k = 1:np
             a(j,k) = -x0^k;             % TODO: this gets overwritten
         end;
